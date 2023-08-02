@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import sys
 
@@ -18,7 +20,7 @@ args = [test, "-vvv", "-s", "--showlocals", "--color=yes"]
 if use_pdb:
     args.append("--pdb")
 
-print("Launching pytest with args: %s" % args)
+print(f"Launching pytest with args: {args}")
 
 return_code = pytest.main(args)
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import capstone
 
 import pwndbg.chain
@@ -10,7 +12,7 @@ from pwndbg.color import ColorParamSpec
 from pwndbg.color import ljust_colored
 from pwndbg.color.message import on
 
-capstone_branch_groups = set((capstone.CS_GRP_CALL, capstone.CS_GRP_JUMP))
+capstone_branch_groups = {capstone.CS_GRP_CALL, capstone.CS_GRP_JUMP}
 
 c = ColorConfig(
     "disasm",
@@ -44,23 +46,23 @@ def instruction(ins):
 
         # If it's a constant expression, color it directly in the asm.
         if const:
-            asm = "%s <%s>" % (ljust_colored(asm, 36), target)
+            asm = f"{ljust_colored(asm, 36)} <{target}>"
             asm = asm.replace(hex(ins.target), sym or target)
 
         # It's not a constant expression, but we've calculated the target
         # address by emulation or other means (for example showing ret instruction target)
         elif sym:
-            asm = "%s <%s; %s>" % (ljust_colored(asm, 36), target, sym)
+            asm = f"{ljust_colored(asm, 36)} <{target}; {sym}>"
 
         # We were able to calculate the target, but there is no symbol
         # name for it.
         else:
-            asm += "<%s>" % (target)
+            asm += f"<{(target)}>"
 
     # not a branch
     elif ins.symbol:
         if is_branch and not ins.target:
-            asm = "%s <%s>" % (asm, ins.symbol)
+            asm = f"{asm} <{ins.symbol}>"
 
             # XXX: not sure when this ever happens
             asm += "<-- file a pwndbg bug for this"
@@ -69,7 +71,7 @@ def instruction(ins):
 
             # display symbol as mem text if no inline replacement was made
             mem_text = ins.symbol if inlined_sym == asm else None
-            asm = "%s <%s>" % (ljust_colored(inlined_sym, 36), M.get(ins.symbol_addr, mem_text))
+            asm = f"{ljust_colored(inlined_sym, 36)} <{M.get(ins.symbol_addr, mem_text)}>"
 
     # Style the instruction mnemonic if it's a branch instruction.
     if is_branch:

@@ -5,6 +5,8 @@ vice-versa.
 Uses IDA when available if there isn't sufficient symbol
 information available.
 """
+from __future__ import annotations
+
 import re
 
 import gdb
@@ -14,7 +16,6 @@ import pwndbg.gdblib.arch
 import pwndbg.gdblib.elf
 import pwndbg.gdblib.events
 import pwndbg.gdblib.file
-import pwndbg.gdblib.info
 import pwndbg.gdblib.memory
 import pwndbg.gdblib.qemu
 import pwndbg.gdblib.remote
@@ -43,13 +44,13 @@ def _get_debug_file_directory():
 
 
 def _set_debug_file_directory(d) -> None:
-    gdb.execute("set debug-file-directory %s" % d, to_string=True, from_tty=False)
+    gdb.execute(f"set debug-file-directory {d}", to_string=True, from_tty=False)
 
 
 def _add_debug_file_directory(d) -> None:
     current = _get_debug_file_directory()
     if current:
-        _set_debug_file_directory("%s:%s" % (current, d))
+        _set_debug_file_directory(f"{current}:{d}")
     else:
         _set_debug_file_directory(d)
 
@@ -140,26 +141,17 @@ def address(symbol: str) -> int:
 
     try:
         # Unfortunately, `gdb.lookup_symbol` does not seem to handle all
-        # symbols, so we need to fallback to using `info address`. See
+        # symbols, so we need to fallback to using `gdb.parse_and_eval`. See
         # https://sourceware.org/pipermail/gdb/2022-October/050362.html
-        address = pwndbg.gdblib.info.address(symbol)
-        if address is None or not pwndbg.gdblib.vmmap.find(address):
-            return None
-
-        return address
+        # (We tried parsing the output of the `info address` before, but there were some issues. See #1628 and #1666)
+        if "\\" in symbol:
+            # Is it possible that happens? Probably not, but just in case
+            raise ValueError(f"Symbol {symbol!r} contains a backslash")
+        sanitized_symbol_name = symbol.replace("'", "\\'")
+        return int(gdb.parse_and_eval(f"&'{sanitized_symbol_name}'"))
 
     except gdb.error:
         return None
-
-    try:
-        # TODO: We should properly check if we have a connection to the IDA server first
-        address = pwndbg.ida.LocByName(symbol)
-        if address:
-            return address
-    except Exception:
-        pass
-
-    return None
 
 
 @pwndbg.lib.cache.cache_until("objfile", "thread")
@@ -206,3 +198,11 @@ def selected_frame_source_absolute_filename():
         return None
 
     return symtab.fullname()
+
+
+def parse_and_eval(expression: str) -> gdb.Value | None:
+    """Error handling wrapper for GDBs parse_and_eval function"""
+    try:
+        return gdb.parse_and_eval(expression)
+    except gdb.error:
+        return None

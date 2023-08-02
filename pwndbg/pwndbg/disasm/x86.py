@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from capstone import *  # noqa: F403
 from capstone.x86 import *  # noqa: F403
 
@@ -67,7 +69,7 @@ class DisassemblyAssistant(pwndbg.disasm.arch.DisassemblyAssistant):
         sz = ""
 
         if segment != 0:
-            sz += "%s:" % instruction.reg_name(segment)
+            sz += f"{instruction.reg_name(segment)}:"
 
         if base != 0:
             sz += instruction.reg_name(base)
@@ -78,7 +80,7 @@ class DisassemblyAssistant(pwndbg.disasm.arch.DisassemblyAssistant):
                 sz += " + "
 
             index = pwndbg.gdblib.regs[instruction.reg_name(index)]
-            sz += "%s*%#x" % (index, scale)
+            sz += f"{index}*{scale:#x}"
             arith = True
 
         if op.mem.disp != 0:
@@ -88,7 +90,7 @@ class DisassemblyAssistant(pwndbg.disasm.arch.DisassemblyAssistant):
                 sz += " + "
             sz += "%#x" % abs(op.mem.disp)
 
-        sz = "[%s]" % sz
+        sz = f"[{sz}]"
         return sz
 
     def register(self, instruction, operand):

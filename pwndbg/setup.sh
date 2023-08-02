@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -ex
 
 # If we are a root in a container and `sudo` doesn't exist
@@ -20,12 +20,12 @@ osx() {
 
 install_apt() {
     sudo apt-get update || true
-    sudo apt-get install -y git gdb gdbserver python3-dev python3-pip python3-setuptools libglib2.0-dev libc6-dbg
+    sudo apt-get install -y git gdb gdbserver python3-dev python3-venv python3-pip python3-setuptools libglib2.0-dev libc6-dbg
 
     if uname -m | grep x86_64 > /dev/null; then
         sudo dpkg --add-architecture i386 || true
         sudo apt-get update || true
-        sudo apt-get install -y libc6-dbg:i386 || true
+        sudo apt-get install -y libc6-dbg:i386 libgcc-s1:i386 || true
     fi
 }
 
@@ -62,27 +62,27 @@ install_emerge() {
 
 install_pacman() {
     sudo pacman -Syy --noconfirm || true
-    sudo pacman -S --noconfirm git gdb python python-pip python-capstone python-unicorn python-pycparser python-psutil python-ptrace python-pyelftools python-six python-pygments which debuginfod
+    sudo pacman -S --needed --noconfirm git gdb python python-pip python-capstone python-unicorn python-pycparser python-psutil python-ptrace python-pyelftools python-six python-pygments which debuginfod
     if ! grep -q "^set debuginfod enabled on" ~/.gdbinit; then
         echo "set debuginfod enabled on" >> ~/.gdbinit
     fi
 }
 
+install_freebsd() {
+    sudo pkg install git gdb python py39-pip cmake gmake
+    which rustc || sudo pkg install rust
+}
+
 usage() {
-    echo "Usage: $0 [--update] [--user]"
+    echo "Usage: $0 [--update]"
     echo "  --update: Install/update dependencies without checking ~/.gdbinit"
-    echo "  --user: Install pip dependencies to the user's home directory"
 }
 
 UPDATE_MODE=
-USER_MODE=
 for arg in "$@"; do
     case $arg in
         --update)
             UPDATE_MODE=1
-            ;;
-        --user)
-            USER_MODE=1
             ;;
         -h | --help)
             set +x
@@ -99,7 +99,6 @@ for arg in "$@"; do
 done
 
 PYTHON=''
-INSTALLFLAGS=''
 
 # Check for the presence of the initializer line in the user's ~/.gdbinit file
 if [ -z "$UPDATE_MODE" ] && grep -q '^[^#]*source.*pwndbg/gdbinit.py' ~/.gdbinit; then
@@ -110,12 +109,6 @@ if [ -z "$UPDATE_MODE" ] && grep -q '^[^#]*source.*pwndbg/gdbinit.py' ~/.gdbinit
     if [[ "$answer" != "y" ]]; then
         exit 0
     fi
-fi
-
-if osx || [ -n "$USER_MODE" ]; then
-    INSTALLFLAGS="--user"
-else
-    PYTHON="sudo "
 fi
 
 if linux; then
@@ -131,7 +124,7 @@ if linux; then
         "clear-linux-os")
             install_swupd
             ;;
-        "opensuse-leap")
+        "opensuse-leap" | "opensuse-tumbleweed")
             install_zypper
             ;;
         "arch" | "archarm" | "endeavouros" | "manjaro" | "garuda")
@@ -149,6 +142,9 @@ if linux; then
                     ${*}
                 }
             fi
+            ;;
+        "freebsd")
+            install_freebsd
             ;;
         *) # we can add more install command for each distros.
             echo "\"$distro\" is not supported distro. Will search for 'apt' or 'dnf' package managers."
@@ -175,27 +171,25 @@ git submodule update --init --recursive
 # Find the Python version used by GDB.
 PYVER=$(gdb -batch -q --nx -ex 'pi import platform; print(".".join(platform.python_version_tuple()[:2]))')
 PYTHON+=$(gdb -batch -q --nx -ex 'pi import sys; print(sys.executable)')
+
 if ! osx; then
     PYTHON+="${PYVER}"
 fi
 
-# Find the Python site-packages that we need to use so that
-# GDB can find the files once we've installed them.
-if linux && [ -z "$INSTALLFLAGS" ]; then
-    SITE_PACKAGES=$(gdb -batch -q --nx -ex 'pi import site; print(site.getsitepackages()[0])')
-    INSTALLFLAGS="--target ${SITE_PACKAGES}"
+# Create Python virtualenv
+if [[ -z "${PWNDBG_VENV_PATH}" ]]; then
+    PWNDBG_VENV_PATH="./.venv"
 fi
+echo "Creating virtualenv in path: ${PWNDBG_VENV_PATH}"
 
-# Make sure that pip is available
-if ! ${PYTHON} -m pip -V; then
-    ${PYTHON} -m ensurepip ${INSTALLFLAGS} --upgrade
-fi
+${PYTHON} -m venv -- ${PWNDBG_VENV_PATH}
+PYTHON=${PWNDBG_VENV_PATH}/bin/python
 
 # Upgrade pip itself
-${PYTHON} -m pip install ${INSTALLFLAGS} --upgrade pip
+${PYTHON} -m pip install --upgrade pip
 
-# Install Python dependencies
-${PYTHON} -m pip install ${INSTALLFLAGS} -Ur requirements.txt
+# Create Python virtual environment and install dependencies in it
+${PWNDBG_VENV_PATH}/bin/pip install -Ur ./requirements.txt
 
 if [ -z "$UPDATE_MODE" ]; then
     # Comment old configs out

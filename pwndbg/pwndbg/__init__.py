@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 import signal
 
@@ -19,6 +21,7 @@ try:
     import pwndbg.disasm.jump
     import pwndbg.disasm.mips
     import pwndbg.disasm.ppc
+    import pwndbg.disasm.riscv
     import pwndbg.disasm.sparc
     import pwndbg.disasm.x86
     import pwndbg.heap

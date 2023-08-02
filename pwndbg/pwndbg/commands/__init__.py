@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import functools
 import io
@@ -16,7 +18,7 @@ from pwndbg.heap.ptmalloc import DebugSymsHeap
 from pwndbg.heap.ptmalloc import HeuristicHeap
 from pwndbg.heap.ptmalloc import SymbolUnresolvableError
 
-commands = []  # type: List[Command]
+commands: list[Command] = []
 command_names = set()
 
 
@@ -60,7 +62,7 @@ def list_current_commands():
             continue
         command = line.split()[0]
         existing_commands.add(command)
-    gdb.execute("set pagination %s" % current_pagination)  # Restore original setting
+    gdb.execute(f"set pagination {current_pagination}")  # Restore original setting
     return existing_commands
 
 
@@ -76,7 +78,7 @@ class Command(gdb.Command):
     """Generic command wrapper"""
 
     builtin_override_whitelist = {"up", "down", "search", "pwd", "start", "ignore"}
-    history = {}  # type: Dict[int,str]
+    history: dict[int, str] = {}
 
     def __init__(
         self,
@@ -100,13 +102,13 @@ class Command(gdb.Command):
         self.function = function
 
         if command_name in command_names:
-            raise Exception("Cannot add command %s: already exists." % command_name)
+            raise Exception(f"Cannot add command {command_name}: already exists.")
         if (
             command_name in GDB_BUILTIN_COMMANDS
             and command_name not in self.builtin_override_whitelist
             and not pwndbg_is_reloading
         ):
-            raise Exception('Cannot override non-whitelisted built-in command "%s"' % command_name)
+            raise Exception(f'Cannot override non-whitelisted built-in command "{command_name}"')
 
         command_names.add(command_name)
         commands.append(self)
@@ -183,7 +185,7 @@ class Command(gdb.Command):
         try:
             return self.function(*args, **kwargs)
         except TypeError as te:
-            print("%r: %s" % (self.function.__name__.strip(), self.function.__doc__.strip()))
+            print(f"{self.function.__name__.strip()!r}: {self.function.__doc__.strip()}")
             pwndbg.exception.handle(self.function.__name__)
         except Exception:
             pwndbg.exception.handle(self.function.__name__)
@@ -244,7 +246,7 @@ def OnlyWithFile(function):
             if pwndbg.gdblib.qemu.is_qemu():
                 print(message.error("Could not determine the target binary on QEMU."))
             else:
-                print(message.error("%s: There is no file loaded." % function.__name__))
+                print(message.error(f"{function.__name__}: There is no file loaded."))
 
     return _OnlyWithFile
 
@@ -256,14 +258,26 @@ def OnlyWhenQemuKernel(function):
             return function(*a, **kw)
         else:
             print(
-                "%s: This command may only be run when debugging the Linux kernel in QEMU."
-                % function.__name__
+                f"{function.__name__}: This command may only be run when debugging the Linux kernel in QEMU."
             )
 
     return _OnlyWhenQemuKernel
 
 
-def OnlyWithArch(arch_names: List[str]):
+def OnlyWhenUserspace(function):
+    @functools.wraps(function)
+    def _OnlyWhenUserspace(*a, **kw):
+        if not pwndbg.gdblib.qemu.is_qemu_kernel():
+            return function(*a, **kw)
+        else:
+            print(
+                f"{function.__name__}: This command may only be run when not debugging a QEMU kernel target."
+            )
+
+    return _OnlyWhenUserspace
+
+
+def OnlyWithArch(arch_names: list[str]):
     """Decorates function to work only with the specified archictectures."""
     for arch in arch_names:
         if arch not in pwndbg.gdblib.arch_mod.ARCHS:
@@ -295,8 +309,7 @@ def OnlyWithKernelDebugSyms(function):
             return function(*a, **kw)
         else:
             print(
-                "%s: This command may only be run when debugging a Linux kernel with debug symbols."
-                % function.__name__
+                f"{function.__name__}: This command may only be run when debugging a Linux kernel with debug symbols."
             )
 
     return _OnlyWithKernelDebugSyms
@@ -308,7 +321,7 @@ def OnlyWhenPagingEnabled(function):
         if pwndbg.gdblib.kernel.paging_enabled():
             return function(*a, **kw)
         else:
-            print("%s: This command may only be run when paging is enabled." % function.__name__)
+            print(f"{function.__name__}: This command may only be run when paging is enabled.")
 
     return _OnlyWhenPagingEnabled
 
@@ -319,7 +332,7 @@ def OnlyWhenRunning(function):
         if pwndbg.gdblib.proc.alive:
             return function(*a, **kw)
         else:
-            print("%s: The program is not being run." % function.__name__)
+            print(f"{function.__name__}: The program is not being run.")
 
     return _OnlyWhenRunning
 
@@ -331,8 +344,7 @@ def OnlyWithTcache(function):
             return function(*a, **kw)
         else:
             print(
-                "%s: This version of GLIBC was not compiled with tcache support."
-                % function.__name__
+                f"{function.__name__}: This version of GLIBC was not compiled with tcache support."
             )
 
     return _OnlyWithTcache
@@ -344,7 +356,7 @@ def OnlyWhenHeapIsInitialized(function):
         if pwndbg.heap.current.is_initialized():
             return function(*a, **kw)
         else:
-            print("%s: Heap is not initialized yet." % function.__name__)
+            print(f"{function.__name__}: Heap is not initialized yet.")
 
     return _OnlyWhenHeapIsInitialized
 
@@ -579,7 +591,7 @@ def AddressExpr(s):
     val = sloppy_gdb_parse(s)
 
     if not isinstance(val, int):
-        raise argparse.ArgumentTypeError("Incorrect address (or GDB expression): %s" % s)
+        raise argparse.ArgumentTypeError(f"Incorrect address (or GDB expression): {s}")
 
     return val
 
@@ -603,6 +615,7 @@ def load_commands() -> None:
     import pwndbg.commands.asm
     import pwndbg.commands.attachp
     import pwndbg.commands.auxv
+    import pwndbg.commands.branch
     import pwndbg.commands.canary
     import pwndbg.commands.checksec
     import pwndbg.commands.comments
@@ -639,6 +652,7 @@ def load_commands() -> None:
     import pwndbg.commands.patch
     import pwndbg.commands.peda
     import pwndbg.commands.pie
+    import pwndbg.commands.plist
     import pwndbg.commands.probeleak
     import pwndbg.commands.procinfo
     import pwndbg.commands.radare2
@@ -650,6 +664,7 @@ def load_commands() -> None:
     import pwndbg.commands.segments
     import pwndbg.commands.shell
     import pwndbg.commands.slab
+    import pwndbg.commands.spray
     import pwndbg.commands.stack
     import pwndbg.commands.start
     import pwndbg.commands.telescope

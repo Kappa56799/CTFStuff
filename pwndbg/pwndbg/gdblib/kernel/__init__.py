@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 import functools
 import math
 import re
+from abc import ABC
+from abc import abstractmethod
+from typing import Optional
 from typing import Tuple
 
 import gdb
@@ -46,6 +51,12 @@ def requires_debug_syms(default=None):
     return decorator
 
 
+@requires_debug_syms(default=1)
+def nproc() -> int:
+    """Returns the number of processing units available, similar to nproc(1)"""
+    return int(gdb.lookup_global_symbol("nr_cpu_ids").value())
+
+
 @requires_debug_syms(default={})
 def load_kconfig() -> pwndbg.lib.kernel.kconfig.Kconfig:
     config_start = pwndbg.gdblib.symbol.address("kernel_config_data")
@@ -80,7 +91,7 @@ def kversion() -> str:
 
 @requires_debug_syms()
 @pwndbg.lib.cache.cache_until("start")
-def krelease() -> Tuple[int, ...]:
+def krelease() -> tuple[int, ...]:
     match = re.search(r"Linux version (\d+)\.(\d+)(?:\.(\d+))?", kversion())
     if match:
         return tuple(int(x) for x in match.groups() if x)
@@ -96,51 +107,163 @@ def is_kaslr_enabled() -> bool:
     return "nokaslr" not in kcmdline()
 
 
-class ArchOps:
+class ArchOps(ABC):
+    # More information on the physical memory model of the Linux kernel and
+    # especially the mapping between pages and page frame numbers (pfn) can
+    # be found at https://docs.kernel.org/mm/memory-model.html
+    # The provided link also includes guidance on detecting the memory model in
+    # use through kernel configuration, enabling support for additional models
+    # in the page_to_pfn() and pfn_to_page() methods in the future.
+
+    @abstractmethod
+    def page_size(self) -> int:
+        raise NotImplementedError()
+
+    @abstractmethod
     def per_cpu(self, addr: gdb.Value, cpu=None):
         raise NotImplementedError()
 
+    @abstractmethod
     def virt_to_phys(self, virt: int) -> int:
         raise NotImplementedError()
 
+    @abstractmethod
     def phys_to_virt(self, phys: int) -> int:
         raise NotImplementedError()
 
+    @abstractmethod
     def phys_to_pfn(self, phys: int) -> int:
         raise NotImplementedError()
 
+    @abstractmethod
     def pfn_to_phys(self, pfn: int) -> int:
         raise NotImplementedError()
 
-    def phys_to_page(self, phys: int) -> int:
+    @abstractmethod
+    def pfn_to_page(self, phys: int) -> int:
         raise NotImplementedError()
+
+    @abstractmethod
+    def page_to_pfn(self, page: int) -> int:
+        raise NotImplementedError()
+
+    def virt_to_pfn(self, virt: int) -> int:
+        return phys_to_pfn(virt_to_phys(virt))
+
+    def pfn_to_virt(self, pfn: int) -> int:
+        return phys_to_virt(pfn_to_phys(pfn))
+
+    def phys_to_page(self, phys: int) -> int:
+        return pfn_to_page(phys_to_pfn(phys))
 
     def page_to_phys(self, page: int) -> int:
-        raise NotImplementedError()
+        return pfn_to_phys(page_to_pfn(page))
 
     def virt_to_page(self, virt: int) -> int:
-        return phys_to_page(virt_to_phys(virt))
+        return pfn_to_page(virt_to_pfn(virt))
 
     def page_to_virt(self, page: int) -> int:
-        return phys_to_virt(page_to_phys(page))
+        return pfn_to_virt(page_to_pfn(page))
 
 
-class x86_64Ops(ArchOps):
+class x86Ops(ArchOps):
+    def page_size(self) -> int:
+        return 1 << self.page_shift
+
+    def phys_to_virt(self, phys: int) -> int:
+        return (phys + self.page_offset) % (1 << self.ptr_size)
+
+    def phys_to_pfn(self, phys: int) -> int:
+        return phys >> self.page_shift
+
+    def pfn_to_phys(self, pfn: int) -> int:
+        return pfn << self.page_shift
+
+    @property
+    @abstractmethod
+    def ptr_size(self) -> int:
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def page_shift(self) -> int:
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def page_offset(self) -> int:
+        raise NotImplementedError()
+
+    @staticmethod
+    def paging_enabled() -> bool:
+        return int(pwndbg.gdblib.regs.cr0) & BIT(31) != 0
+
+
+class i386Ops(x86Ops):
     def __init__(self) -> None:
-        if "X86_5LEVEL" in kconfig() and "no5lvl" not in kcmdline():
-            raise NotImplementedError("Level 5 page table support is not implemented")
+        # https://elixir.bootlin.com/linux/v6.2/source/arch/x86/include/asm/page_32_types.h#L18
+        self._PAGE_OFFSET = int(kconfig()["CONFIG_PAGE_OFFSET"], 16)
+        self.START_KERNEL_map = self.PAGE_OFFSET
+
+    @property
+    def ptr_size(self) -> int:
+        return 32
+
+    @property
+    def page_offset(self) -> int:
+        return self._PAGE_OFFSET
+
+    @property
+    def page_shift(self) -> int:
+        # https://elixir.bootlin.com/linux/v6.2/source/arch/x86/include/asm/page_types.h#L10
+        return 12
+
+    def virt_to_phys(self, virt: int) -> int:
+        return (virt - self.page_offset) % (1 << 32)
+
+    def per_cpu(self, addr: gdb.Value, cpu: int | None = None):
+        raise NotImplementedError()
+
+    def pfn_to_page(self, pfn: int) -> int:
+        raise NotImplementedError()
+
+    def page_to_pfn(self, page: int) -> int:
+        raise NotImplementedError()
+
+
+class x86_64Ops(x86Ops):
+    def __init__(self) -> None:
+        if self.uses_5lvl_paging():
+            # https://elixir.bootlin.com/linux/v6.2/source/arch/x86/include/asm/page_64_types.h#L41
+            self._PAGE_OFFSET = 0xFF11000000000000
+            # https://elixir.bootlin.com/linux/v6.2/source/arch/x86/include/asm/pgtable_64_types.h#L131
+            self.VMEMMAP_START = 0xFFD4000000000000
+        else:
+            # https://elixir.bootlin.com/linux/v6.2/source/arch/x86/include/asm/page_64_types.h#L42
+            self._PAGE_OFFSET = 0xFFFF888000000000
+            # https://elixir.bootlin.com/linux/v6.2/source/arch/x86/include/asm/pgtable_64_types.h#L130
+            self.VMEMMAP_START = 0xFFFFEA0000000000
 
         self.STRUCT_PAGE_SIZE = gdb.lookup_type("struct page").sizeof
         self.STRUCT_PAGE_SHIFT = int(math.log2(self.STRUCT_PAGE_SIZE))
 
-        self.PAGE_OFFSET = 0xFFFF888000000000
-        self.PHYSICAL_MASK_SHIFT = 52
-        self.VIRTUAL_MASK_SHIFT = 47
         self.START_KERNEL_map = 0xFFFFFFFF80000000
-        self.PAGE_SHIFT = 12
         self.phys_base = 0x1000000
 
-    def per_cpu(self, addr: gdb.Value, cpu=None):
+    @property
+    def ptr_size(self) -> int:
+        return 64
+
+    @property
+    def page_offset(self) -> int:
+        return self._PAGE_OFFSET
+
+    @property
+    def page_shift(self) -> int:
+        # https://elixir.bootlin.com/linux/v6.2/source/arch/x86/include/asm/page_64_types.h#L50
+        return 12
+
+    def per_cpu(self, addr: gdb.Value, cpu: int | None = None):
         if cpu is None:
             cpu = gdb.selected_thread().num - 1
 
@@ -150,29 +273,37 @@ class x86_64Ops(ArchOps):
         return gdb.Value(per_cpu_addr).cast(addr.type)
 
     def virt_to_phys(self, virt: int) -> int:
-        if virt < self.__START_KERNEL_map:
-            return virt - self.PAGE_OFFSET
-        else:
-            return (virt - self.__START_KERNEL_MAP) + self.phys_base
+        if virt < self.START_KERNEL_map:
+            return (virt - self.page_offset) % (1 << 64)
+        return ((virt - self.START_KERNEL_map) + self.phys_base) % (1 << 64)
 
-    def phys_to_virt(self, phys: int) -> int:
-        return phys + self.PAGE_OFFSET
+    def pfn_to_page(self, pfn: int) -> int:
+        # assumption: SPARSEMEM_VMEMMAP memory model used
+        # FLATMEM or SPARSEMEM not (yet) implemented
+        return (pfn << self.STRUCT_PAGE_SHIFT) + self.VMEMMAP_START
 
-    def phys_to_pfn(self, phys: int) -> int:
-        return phys >> self.PAGE_SHIFT
-
-    def pfn_to_phys(self, pfn: int) -> int:
-        return pfn << self.PAGE_SHIFT
-
-    def phys_to_page(self, phys: int) -> int:
-        return (self.STRUCT_PAGE_SIZE * phys_to_pfn(phys)) + self.START_KERNEL_map
-
-    def page_to_phys(self, page: int) -> int:
-        return pfn_to_phys((page - self.START_KERNEL_map) >> self.STRUCT_PAGE_SHIFT)
+    def page_to_pfn(self, page: int) -> int:
+        # assumption: SPARSEMEM_VMEMMAP memory model used
+        # FLATMEM or SPARSEMEM not (yet) implemented
+        return (page - self.VMEMMAP_START) >> self.STRUCT_PAGE_SHIFT
 
     @staticmethod
-    def paging_enabled() -> bool:
-        return int(pwndbg.gdblib.regs.cr0) & BIT(31) != 0
+    @requires_debug_syms()
+    def cpu_feature_capability(feature: int) -> bool:
+        boot_cpu_data = gdb.lookup_global_symbol("boot_cpu_data").value()
+        capabilities = boot_cpu_data["x86_capability"]
+        return (int(capabilities[feature // 32]) >> (feature % 32)) & 1 == 1
+
+    @staticmethod
+    @requires_debug_syms()
+    def uses_5lvl_paging() -> bool:
+        # https://elixir.bootlin.com/linux/v6.2/source/arch/x86/include/asm/cpufeatures.h#L381
+        X86_FEATURE_LA57 = 16 * 32 + 16
+        return (
+            kconfig().get("CONFIG_X86_5LEVEL") == "y"
+            and "no5lvl" not in kcmdline()
+            and x86_64Ops.cpu_feature_capability(X86_FEATURE_LA57)
+        )
 
 
 class Aarch64Ops(ArchOps):
@@ -182,7 +313,6 @@ class Aarch64Ops(ArchOps):
 
         self.VA_BITS = int(kconfig()["ARM64_VA_BITS"])
         self.PAGE_SHIFT = int(kconfig()["CONFIG_ARM64_PAGE_SHIFT"])
-        self.PAGE_SIZE = 1 << self.PAGE_SHIFT
 
         self.PHYS_OFFSET = pwndbg.gdblib.memory.u(pwndbg.gdblib.symbol.address("memstart_addr"))
         self.PAGE_OFFSET = (-1 << self.VA_BITS) + 2**64
@@ -191,9 +321,18 @@ class Aarch64Ops(ArchOps):
         PAGE_END = (-1 << (VA_BITS_MIN - 1)) + 2**64
         VMEMMAP_SIZE = (PAGE_END - self.PAGE_OFFSET) >> (self.PAGE_SHIFT - self.STRUCT_PAGE_SHIFT)
 
-        self.VMEMMAP_START = (-VMEMMAP_SIZE - 2 * 1024 * 1024) + 2**64
+        if pwndbg.gdblib.kernel.krelease() >= (5, 11):
+            # Linux 5.11 changed the calculation for VMEMMAP_START
+            # https://elixir.bootlin.com/linux/v5.11/source/arch/arm64/include/asm/memory.h#L53
+            self.VMEMMAP_SHIFT = self.PAGE_SHIFT - self.STRUCT_PAGE_SHIFT
+            self.VMEMMAP_START = -(1 << (self.VA_BITS - self.VMEMMAP_SHIFT)) % (1 << 64)
+        else:
+            self.VMEMMAP_START = (-VMEMMAP_SIZE - 2 * 1024 * 1024) + 2**64
 
-    def per_cpu(self, addr: gdb.Value, cpu=None):
+    def page_size(self) -> int:
+        return 1 << self.PAGE_SHIFT
+
+    def per_cpu(self, addr: gdb.Value, cpu: int | None = None):
         if cpu is None:
             cpu = gdb.selected_thread().num - 1
 
@@ -214,11 +353,15 @@ class Aarch64Ops(ArchOps):
     def pfn_to_phys(self, pfn: int) -> int:
         return pfn << self.PAGE_SHIFT
 
-    def phys_to_page(self, phys: int) -> int:
-        return (self.STRUCT_PAGE_SIZE * phys_to_pfn(phys)) + self.VMEMMAP_START
+    def pfn_to_page(self, pfn: int) -> int:
+        # assumption: SPARSEMEM_VMEMMAP memory model used
+        # FLATMEM or SPARSEMEM not (yet) implemented
+        return (pfn << self.STRUCT_PAGE_SHIFT) + self.VMEMMAP_START
 
-    def page_to_phys(self, page: int) -> int:
-        return pfn_to_phys((page - self.VMEMMAP_START) >> self.STRUCT_PAGE_SHIFT)
+    def page_to_pfn(self, page: int) -> int:
+        # assumption: SPARSEMEM_VMEMMAP memory model used
+        # FLATMEM or SPARSEMEM not (yet) implemented
+        return (page - self.VMEMMAP_START) >> self.STRUCT_PAGE_SHIFT
 
     @staticmethod
     def paging_enabled() -> bool:
@@ -233,17 +376,27 @@ _arch_ops: ArchOps = None
 def arch_ops() -> ArchOps:
     global _arch_ops
     if _arch_ops is None:
-        arch_name = pwndbg.gdblib.arch.name
         if pwndbg.gdblib.arch.name == "aarch64":
             _arch_ops = Aarch64Ops()
         elif pwndbg.gdblib.arch.name == "x86-64":
             _arch_ops = x86_64Ops()
+        elif pwndbg.gdblib.arch.name == "i386":
+            _arch_ops = i386Ops()
 
     return _arch_ops
 
 
-def per_cpu(addr: gdb.Value, cpu=None):
-    arch_name = pwndbg.gdblib.arch.name
+@requires_debug_syms()
+def page_size() -> int:
+    ops = arch_ops()
+    if ops:
+        return ops.page_size()
+    else:
+        raise NotImplementedError()
+
+
+@requires_debug_syms()
+def per_cpu(addr: gdb.Value, cpu: int | None = None):
     ops = arch_ops()
     if ops:
         return ops.per_cpu(addr, cpu)
@@ -251,8 +404,8 @@ def per_cpu(addr: gdb.Value, cpu=None):
         raise NotImplementedError()
 
 
+@requires_debug_syms()
 def virt_to_phys(virt: int) -> int:
-    arch_name = pwndbg.gdblib.arch.name
     ops = arch_ops()
     if ops:
         return ops.virt_to_phys(virt)
@@ -260,8 +413,8 @@ def virt_to_phys(virt: int) -> int:
         raise NotImplementedError()
 
 
+@requires_debug_syms()
 def phys_to_virt(phys: int) -> int:
-    arch_name = pwndbg.gdblib.arch.name
     ops = arch_ops()
     if ops:
         return ops.phys_to_virt(phys)
@@ -269,8 +422,8 @@ def phys_to_virt(phys: int) -> int:
         raise NotImplementedError()
 
 
+@requires_debug_syms()
 def phys_to_pfn(phys: int) -> int:
-    arch_name = pwndbg.gdblib.arch.name
     ops = arch_ops()
     if ops:
         return ops.phys_to_pfn(phys)
@@ -278,8 +431,8 @@ def phys_to_pfn(phys: int) -> int:
         raise NotImplementedError()
 
 
+@requires_debug_syms()
 def pfn_to_phys(pfn: int) -> int:
-    arch_name = pwndbg.gdblib.arch.name
     ops = arch_ops()
     if ops:
         return ops.pfn_to_phys(pfn)
@@ -287,8 +440,26 @@ def pfn_to_phys(pfn: int) -> int:
         raise NotImplementedError()
 
 
+@requires_debug_syms()
+def pfn_to_page(pfn: int) -> int:
+    ops = arch_ops()
+    if ops:
+        return ops.pfn_to_page(pfn)
+    else:
+        raise NotImplementedError()
+
+
+@requires_debug_syms()
+def page_to_pfn(page: int) -> int:
+    ops = arch_ops()
+    if ops:
+        return ops.page_to_pfn(page)
+    else:
+        raise NotImplementedError()
+
+
+@requires_debug_syms()
 def phys_to_page(phys: int) -> int:
-    arch_name = pwndbg.gdblib.arch.name
     ops = arch_ops()
     if ops:
         return ops.phys_to_page(phys)
@@ -296,8 +467,8 @@ def phys_to_page(phys: int) -> int:
         raise NotImplementedError()
 
 
+@requires_debug_syms()
 def page_to_phys(page: int) -> int:
-    arch_name = pwndbg.gdblib.arch.name
     ops = arch_ops()
     if ops:
         return ops.page_to_phys(page)
@@ -305,8 +476,8 @@ def page_to_phys(page: int) -> int:
         raise NotImplementedError()
 
 
+@requires_debug_syms()
 def virt_to_page(virt: int) -> int:
-    arch_name = pwndbg.gdblib.arch.name
     ops = arch_ops()
     if ops:
         return ops.virt_to_page(virt)
@@ -314,8 +485,8 @@ def virt_to_page(virt: int) -> int:
         raise NotImplementedError()
 
 
+@requires_debug_syms()
 def page_to_virt(page: int) -> int:
-    arch_name = pwndbg.gdblib.arch.name
     ops = arch_ops()
     if ops:
         return ops.page_to_virt(page)
@@ -323,11 +494,45 @@ def page_to_virt(page: int) -> int:
         raise NotImplementedError()
 
 
+@requires_debug_syms()
+def pfn_to_virt(pfn: int) -> int:
+    ops = arch_ops()
+    if ops:
+        return ops.pfn_to_virt(pfn)
+    else:
+        raise NotImplementedError()
+
+
+@requires_debug_syms()
+def virt_to_pfn(virt: int) -> int:
+    ops = arch_ops()
+    if ops:
+        return ops.virt_to_pfn(virt)
+    else:
+        raise NotImplementedError()
+
+
 def paging_enabled() -> bool:
     arch_name = pwndbg.gdblib.arch.name
-    if arch_name == "x86-64":
+    if arch_name == "i386":
+        return i386Ops.paging_enabled()
+    elif arch_name == "x86-64":
         return x86_64Ops.paging_enabled()
     elif arch_name == "aarch64":
         return Aarch64Ops.paging_enabled()
     else:
         raise NotImplementedError()
+
+
+@requires_debug_syms()
+def num_numa_nodes() -> int:
+    """Returns the number of NUMA nodes that are online on the system"""
+    kc = kconfig()
+    if "CONFIG_NUMA" not in kc:
+        return 1
+
+    max_nodes = 1 << int(kc["CONFIG_NODES_SHIFT"])
+    if max_nodes == 1:
+        return 1
+
+    return int(gdb.lookup_global_symbol("nr_online_nodes").value())

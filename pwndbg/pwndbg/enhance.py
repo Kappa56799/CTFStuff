@@ -7,6 +7,8 @@ dependent on page permissions, the contents of the data, and any
 supplemental information sources (e.g. active IDA Pro connection).
 """
 
+from __future__ import annotations
+
 import string
 
 import pwndbg.color.enhance as E
@@ -35,7 +37,7 @@ def int_str(value: int) -> str:
     packed = pwndbg.gdblib.arch.pack(int(value))
     if all(c in string.printable.encode("utf-8") for c in packed):
         if len(retval) > 4:
-            retval = "%s (%r)" % (retval, str(packed.decode("ascii", "ignore")))
+            retval = "{} ({!r})".format(retval, str(packed.decode("ascii", "ignore")))
 
     return retval
 
@@ -89,7 +91,7 @@ def enhance(value: int, code: bool = True, safe_linking: bool = False) -> str:
     if exe:
         instr = pwndbg.disasm.one(value)
         if instr:
-            instr = "%s %s" % (instr.mnemonic, instr.op_str)
+            instr = f"{instr.mnemonic} {instr.op_str}"
             if pwndbg.gdblib.config.syntax_highlight:
                 instr = syntax_highlight(instr)
 
@@ -154,4 +156,4 @@ def enhance(value: int, code: bool = True, safe_linking: bool = False) -> str:
     if len(retval) == 1:
         return retval[0]
 
-    return retval[0] + E.comment(color.strip(" /* {} */".format("; ".join(retval[1:]))))
+    return retval[0] + E.comment(color.strip(f" /* {'; '.join(retval[1:])} */"))

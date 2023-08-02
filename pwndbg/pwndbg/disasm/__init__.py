@@ -3,6 +3,8 @@ Functionality for disassmebling code at an address, or at an
 address +/- a few instructions.
 """
 
+from __future__ import annotations
+
 import collections
 from typing import DefaultDict
 from typing import List
@@ -35,6 +37,8 @@ CapstoneArch = {
     "powerpc": CS_ARCH_PPC,
     "mips": CS_ARCH_MIPS,
     "sparc": CS_ARCH_SPARC,
+    "rv32": CS_ARCH_RISCV,
+    "rv64": CS_ARCH_RISCV,
 }
 
 CapstoneEndian = {
@@ -56,13 +60,15 @@ VariableInstructionSizeMax = {
     "x86-64": 16,
     "i8086": 16,
     "mips": 8,
+    "rv32": 22,
+    "rv64": 22,
 }
 
 backward_cache: DefaultDict = collections.defaultdict(lambda: None)
 
 
 @pwndbg.lib.cache.cache_until("objfile")
-def get_disassembler_cached(arch, ptrsize, endian, extra=None):
+def get_disassembler_cached(arch, ptrsize: int, endian, extra=None):
     arch = CapstoneArch[arch]
 
     if extra is None:
@@ -117,6 +123,11 @@ def get_disassembler(pc):
     ):
         extra = CS_MODE_MIPS32R6
 
+    elif pwndbg.gdblib.arch.current == "rv32":
+        extra = CS_MODE_RISCV32 | CS_MODE_RISCVC  # novermin
+    elif pwndbg.gdblib.arch.current == "rv64":
+        extra = CS_MODE_RISCV64 | CS_MODE_RISCVC  # novermin
+
     else:
         extra = None
 
@@ -135,7 +146,7 @@ class SimpleInstruction:
         self.size = ins["length"]
         self.next = self.address + self.size
         self.target = self.next
-        self.groups: List[Any] = []
+        self.groups: list[Any] = []
         self.symbol = None
         self.condition = False
 
@@ -152,7 +163,7 @@ def get_one_instruction(address):
         return ins
 
 
-def one(address=None) -> Union[capstone.CsInsn, SimpleInstruction]:
+def one(address=None) -> capstone.CsInsn | SimpleInstruction:
     if address is None:
         address = pwndbg.gdblib.regs.pc
 
@@ -209,7 +220,7 @@ DO_NOT_EMULATE = {
 }
 
 
-def can_run_first_emulate():
+def can_run_first_emulate() -> bool:
     """
     Disable the emulate config variable if we don't have enough memory to use it
     See https://github.com/pwndbg/pwndbg/issues/1534
@@ -261,7 +272,7 @@ def near(address, instructions=1, emulate=False, show_prev_insns=True):
     if current is None or not pwndbg.gdblib.memory.peek(address):
         return []
 
-    insns: List[Union[capstone.CsInsn, SimpleInstruction]] = []
+    insns: list[capstone.CsInsn | SimpleInstruction] = []
 
     # Try to go backward by seeing which instructions we've returned
     # before, which were followed by this one.

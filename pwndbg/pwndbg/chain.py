@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import gdb
 
 import pwndbg.color.memory as M
@@ -113,15 +115,15 @@ def format(value, limit=LIMIT, code=True, offset=0, hard_stop=None, hard_end=0, 
     else:
         chain = get(value, limit, offset, hard_stop, hard_end, safe_linking=safe_linking)
 
-    arrow_left = c.arrow(" %s " % config_arrow_left)
-    arrow_right = c.arrow(" %s " % config_arrow_right)
+    arrow_left = c.arrow(f" {config_arrow_left} ")
+    arrow_right = c.arrow(f" {config_arrow_right} ")
 
     # Colorize the chain
     rest = []
     for link in chain:
         symbol = pwndbg.gdblib.symbol.get(link) or None
         if symbol:
-            symbol = "%#x (%s)" % (link, symbol)
+            symbol = f"{link:#x} ({symbol})"
         rest.append(M.get(link, symbol))
 
     # If the dereference limit is zero, skip any enhancements.
@@ -143,7 +145,7 @@ def format(value, limit=LIMIT, code=True, offset=0, hard_stop=None, hard_end=0, 
         enhanced = pwndbg.enhance.enhance(chain[-2] + offset, code=code, safe_linking=safe_linking)
 
     else:
-        enhanced = c.contiguous_marker("%s" % config_contiguous)
+        enhanced = c.contiguous_marker(f"{config_contiguous}")
 
     if len(chain) == 1:
         return enhanced

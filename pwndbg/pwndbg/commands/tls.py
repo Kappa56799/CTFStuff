@@ -1,6 +1,8 @@
 """
 Command to print the information of the current Thread Local Storage (TLS).
 """
+from __future__ import annotations
+
 import argparse
 
 import pwndbg.commands
@@ -24,6 +26,7 @@ parser.add_argument(
 
 @pwndbg.commands.ArgparsedCommand(parser, category=CommandCategory.LINUX)
 @pwndbg.commands.OnlyWhenRunning
+@pwndbg.commands.OnlyWhenUserspace
 def tls(pthread_self=False) -> None:
     tls_base = (
         pwndbg.gdblib.tls.find_address_with_register()

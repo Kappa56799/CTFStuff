@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import subprocess
 
@@ -23,9 +25,9 @@ def build_id() -> str:
         return ""
 
 
-__version__ = "2023.03.19"
+__version__ = "2023.07.17"
 
 b_id = build_id()
 
 if b_id:
-    __version__ += " %s" % b_id
+    __version__ += f" {b_id}"

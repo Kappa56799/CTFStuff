@@ -95,13 +95,16 @@ install_apt() {
         parallel \
         netcat-openbsd \
         qemu-system-x86 \
-        qemu-system-arm
+        qemu-system-arm \
+        qemu-user \
+        gcc-aarch64-linux-gnu \
+        gcc-riscv64-linux-gnu
 
     if [[ "$1" == "22.04" ]]; then
         sudo apt install shfmt
     fi
 
-    test -f /usr/bin/go || sudo apt-get install -y golang
+    command -v go &> /dev/null || sudo apt-get install -y golang
 
     download_zig_binary
 }
@@ -117,15 +120,12 @@ Include = /etc/pacman.d/mirrorlist
 [extra-debug]
 Include = /etc/pacman.d/mirrorlist
 
-[community-debug]
-Include = /etc/pacman.d/mirrorlist
-
 [multilib-debug]
 Include = /etc/pacman.d/mirrorlist
 EOF
 
     sudo pacman -Syu --noconfirm || true
-    sudo pacman -S --noconfirm \
+    sudo pacman -S --needed --noconfirm \
         nasm \
         gcc \
         glibc-debug \
@@ -135,7 +135,7 @@ EOF
         parallel \
         gnu-netcat
 
-    test -f /usr/bin/go || sudo pacman -S --noconfirm go
+    command -v go &> /dev/null || sudo pacman -S --noconfirm go
 
     download_zig_binary
 }
@@ -170,5 +170,10 @@ if linux; then
             ;;
     esac
 
-    python3 -m pip install -r dev-requirements.txt
+    if [[ -z "${PWNDBG_VENV_PATH}" ]]; then
+        PWNDBG_VENV_PATH="./.venv"
+    fi
+    echo "Using virtualenv from path: ${PWNDBG_VENV_PATH}"
+    PYTHON=${PWNDBG_VENV_PATH}/bin/python
+    ${PYTHON} -m pip install -r dev-requirements.txt
 fi

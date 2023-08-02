@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import collections
 
 from pycparser import CParser  # type: ignore
@@ -36,7 +38,7 @@ Argument = collections.namedtuple("Argument", ("type", "derefcnt", "name"))
 
 
 def Stringify(X) -> str:
-    return "%s %s %s" % (X.type, X.derefcnt * "*", X.name)
+    return f"{X.type} {X.derefcnt * '*'} {X.name}"
 
 
 def ExtractFuncDecl(node, verbose=False):

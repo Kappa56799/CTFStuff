@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from elftools.elf.elffile import ELFFile
 
 import pwndbg.commands
@@ -28,7 +30,7 @@ def elfsections() -> None:
         sections.sort()
 
         for start, end, name in sections:
-            print("%#x - %#x " % (start, end), name)
+            print(f"{start:#x} - {end:#x} ", name)
 
 
 @pwndbg.commands.ArgparsedCommand(
@@ -87,7 +89,7 @@ def print_symbols_in_section(section_name, filter_text="") -> None:
     symbols = get_symbols_in_region(start, end, filter_text)
 
     if not symbols:
-        print(message.error("No symbols found in section %s" % section_name))
+        print(message.error(f"No symbols found in section {section_name}"))
 
     for symbol, addr in symbols:
         print(hex(int(addr)) + ": " + symbol)

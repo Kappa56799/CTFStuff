@@ -3,6 +3,8 @@ Re-implements some psutil functionality to be able to get information from
 remote debugging sessions.
 """
 
+from __future__ import annotations
+
 import binascii
 import socket
 
@@ -42,17 +44,12 @@ class Connection(inode):
     family = None
 
     def __str__(self) -> str:
-        return "%s %s:%s => %s:%s (%s)" % (
-            self.family,
-            self.lhost,
-            self.lport,
-            self.rhost,
-            self.rport,
-            self.status,
+        return (
+            f"{self.family} {self.lhost}:{self.lport} => {self.rhost}:{self.rport} ({self.status})"
         )
 
     def __repr__(self) -> str:
-        return 'Connection("%s")' % self
+        return f'Connection("{self}")'
 
 
 class UnixSocket(inode):
@@ -62,7 +59,7 @@ class UnixSocket(inode):
         return "unix %r" % self.path
 
     def __repr__(self) -> str:
-        return "UnixSocket(%s)" % self
+        return f"UnixSocket({self})"
 
 
 def tcp(data: str):
@@ -200,7 +197,7 @@ class Netlink(inode):
         return NETLINK_TYPES.get(self.eth, "(unknown netlink)")
 
     def __repr__(self) -> str:
-        return "Netlink(%s)" % self
+        return f"Netlink({self})"
 
 
 def netlink(data: str):

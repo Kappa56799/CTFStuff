@@ -4,6 +4,8 @@ GPT-3 large language model and asks it a question supplied by the user. It then
 displays GPT-3's response to that question to the user.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -68,7 +70,7 @@ dummy = False
 verbosity = 0
 
 
-def set_dummy_mode(d=True):
+def set_dummy_mode(d=True) -> None:
     global dummy
     dummy = d
     return
@@ -111,7 +113,7 @@ def build_prompt(question, command=None):
 
     conversation = [system_msg, context_msg]
 
-    for (q, a) in zip(last_question, last_answer):
+    for q, a in zip(last_question, last_answer):
         conversation.append({"role": "user", "content": q})
         conversation.append({"role": "assistant", "content": a})
 
@@ -136,7 +138,6 @@ def flatten_prompt(conversation):
 
 
 def build_context_prompt_body():
-
     decompile = False
     ## First, get the current GDB context
     ## Let's begin with the assembly near the current instruction

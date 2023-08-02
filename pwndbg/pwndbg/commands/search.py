@@ -1,9 +1,10 @@
+from __future__ import annotations
+
 import argparse
 import binascii
 import codecs
 import os
 import struct
-from typing import Set
 
 import pwndbg.color.memory as M
 import pwndbg.commands
@@ -15,7 +16,7 @@ import pwndbg.search
 from pwndbg.color import message
 from pwndbg.commands import CommandCategory
 
-saved: Set[int] = set()
+saved: set[int] = set()
 
 
 def print_search_hit(address) -> None:
@@ -151,7 +152,7 @@ def search(type, hex, executable, writable, value, mapping_name, save, next, tru
         try:
             value = codecs.decode(value, "hex")
         except binascii.Error as e:
-            print("invalid input for type hex: {}".format(e))
+            print(f"invalid input for type hex: {e}")
             return
 
     # Convert to an integer if needed, and pack to bytes
@@ -169,7 +170,7 @@ def search(type, hex, executable, writable, value, mapping_name, save, next, tru
         try:
             value = struct.pack(fmt, value)
         except struct.error as e:
-            print("invalid input for type {}: {}".format(type, e))
+            print(f"invalid input for type {type}: {e}")
             return
 
     # Null-terminate strings
@@ -218,7 +219,6 @@ def search(type, hex, executable, writable, value, mapping_name, save, next, tru
     for address in pwndbg.search.search(
         value, mappings=mappings, executable=executable, writable=writable
     ):
-
         if save:
             saved.add(address)
 

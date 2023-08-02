@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 
 import gdb
@@ -35,7 +37,7 @@ def address_or_module_name(s):
         if pages:
             return pages[0].vaddr
         else:
-            raise argparse.ArgumentTypeError("Could not find pages for module %s" % module_name)
+            raise argparse.ArgumentTypeError(f"Could not find pages for module {module_name}")
     elif isinstance(gdbval_or_str, (int, gdb.Value)):
         addr = gdbval_or_str
         return addr

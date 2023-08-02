@@ -2,6 +2,8 @@
 Prints structures in a manner similar to Windbg's "dt" command.
 """
 
+from __future__ import annotations
+
 import re
 
 import gdb
@@ -52,7 +54,7 @@ def get_field_by_name(obj, field):
     return obj
 
 
-def happy(typename):
+def happy(typename: str):
     prefix = ""
     if "unsigned" in typename:
         prefix = "u"
@@ -92,7 +94,7 @@ def dt(name="", addr=None, obj=None):
 
     # If it's not a struct (e.g. int or char*), bail
     if t.code not in (gdb.TYPE_CODE_STRUCT, gdb.TYPE_CODE_TYPEDEF, gdb.TYPE_CODE_UNION):
-        raise Exception("Not a structure: %s" % t)
+        raise Exception(f"Not a structure: {t}")
 
     # If an address was specified, create a Value of the
     # specified type at that address.
@@ -102,7 +104,7 @@ def dt(name="", addr=None, obj=None):
     # Header, optionally include the name
     header = name
     if obj:
-        header = "%s @ %s" % (header, hex(int(obj.address)))
+        header = f"{header} @ {hex(int(obj.address))}"
     rv.append(header)
 
     if t.strip_typedefs().code == gdb.TYPE_CODE_ARRAY:

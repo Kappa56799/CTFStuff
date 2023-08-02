@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import re
 
@@ -24,7 +26,7 @@ def test_loads_binary_without_crashing():
 
     for h in HELLO:
         assert h in output
-    assert any("Reading symbols from %s..." % BINARY in line for line in output)
+    assert any(f"Reading symbols from {BINARY}..." in line for line in output)
     assert any("pwndbg: loaded" in line for line in output)
 
 
@@ -35,7 +37,7 @@ def test_loads_binary_with_core_without_crashing():
         assert os.path.isfile(CORE)
     output = run_gdb_with_script(binary=BINARY, core=CORE).splitlines()
 
-    assert any("Reading symbols from %s..." % BINARY in line for line in output)
+    assert any(f"Reading symbols from {BINARY}..." in line for line in output)
     assert any("pwndbg: loaded" in line for line in output)
     assert "Program terminated with signal SIGFPE, Arithmetic exception." in output
     for h in HELLO:

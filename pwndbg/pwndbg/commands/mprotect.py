@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 
 import gdb
@@ -61,7 +63,6 @@ def prot_str_to_val(protstr):
 @pwndbg.commands.ArgparsedCommand(parser, category=CommandCategory.MEMORY)
 @pwndbg.commands.OnlyWhenRunning
 def mprotect(addr, length, prot) -> None:
-
     prot_int = prot_str_to_val(prot)
 
     # generate a shellcode that executes the mprotect syscall

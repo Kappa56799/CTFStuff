@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import gdb
 
 import pwndbg
@@ -37,7 +39,7 @@ def test_vis_heap_chunk_command(start_binary):
     def hexdump_16B(gdb_symbol):
         from pwndbg.commands.heap import bin_ascii
 
-        first, second = gdb.execute("x/16xb %s" % gdb_symbol, to_string=True).splitlines()
+        first, second = gdb.execute(f"x/16xb {gdb_symbol}", to_string=True).splitlines()
         first = [int(v, 16) for v in first.split(":")[1].split("\t")[1:]]
         second = [int(v, 16) for v in second.split(":")[1].split("\t")[1:]]
 
@@ -51,7 +53,7 @@ def test_vis_heap_chunk_command(start_binary):
         nonlocal dq2
         dq1, dq2 = map(pwndbg.gdblib.memory.u64, (addr, addr + 8))
 
-        formatted = "%#x\t%#018x\t%#018x\t%s" % (addr, dq1, dq2, hexdump)
+        formatted = f"{addr:#x}\t{dq1:#018x}\t{dq2:#018x}\t{hexdump}"
         formatted += suffix
 
         return formatted
@@ -60,7 +62,7 @@ def test_vis_heap_chunk_command(start_binary):
 
     expected = [
         "",
-        "%#x\t0x0000000000000000\t%#018x\t%s" % (heap_iter(0), first_chunk_size | 1, first_hexdump),
+        f"{heap_iter(0):#x}\t0x0000000000000000\t{first_chunk_size | 1:#018x}\t{first_hexdump}",
     ]
     for _ in range(first_chunk_size // 16 - 1):
         expected.append(
@@ -162,7 +164,7 @@ def test_vis_heap_chunk_command(start_binary):
     tcache_key = int(gdb.parse_and_eval("tcache->entries[0]->key"))
 
     tcache_hexdump = hexdump_16B("tcache->entries[0]")
-    freed_chunk = "%#x\t%#018x\t%#018x\t%s\t " % (
+    freed_chunk = "{:#x}\t{:#018x}\t{:#018x}\t{}\t ".format(
         heap_iter(-0x40),
         tcache_next,
         tcache_key,

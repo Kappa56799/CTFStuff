@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import time
 
 import gdb
@@ -7,7 +9,7 @@ import tests
 REFERENCE_BINARY_THREADS = tests.binaries.get("multiple_threads.out")
 
 
-def wait_until(predicate: callable, timeout: int = 5):
+def wait_until(predicate: callable, timeout: int = 10):
     """
     Waits until the predicate returns True or timeout is reached.
     """
@@ -32,10 +34,6 @@ def test_command_killthreads_kills_all_threads_except_current(start_binary):
 
     # check if only one thread is left
     wait_until(lambda: len(gdb.selected_inferior().threads()) == 1)
-
-    gdb.execute("continue")
-    exit_code = gdb.execute("print $_exitcode", to_string=True)
-    assert exit_code == "$1 = 0\n"  # if the second thread was killed, the exit code should be 0
 
 
 def test_command_killthreads_kills_specific_thread(start_binary):

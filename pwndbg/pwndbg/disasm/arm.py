@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from capstone import *  # noqa: F403
 from capstone.arm import *  # noqa: F403
 
@@ -21,15 +23,14 @@ class DisassemblyAssistant(pwndbg.disasm.arch.DisassemblyAssistant):
         if op.mem.index != 0:
             index = pwndbg.gdblib.regs[instruction.reg_name(op.mem.index)]
             scale = op.mem.scale
-            parts.append("%s*%#x" % (index, scale))
+            parts.append(f"{index}*{scale:#x}")
 
-        return "[%s]" % (", ".join(parts))
+        return f"[{(', '.join(parts))}]"
 
     def immediate_sz(self, instruction, operand):
         return "#" + super().immediate_sz(instruction, operand)
 
     def condition(self, instruction):
-
         # We can't reason about anything except the current instruction
         if instruction.cc == ARM_CC_AL:
             return None

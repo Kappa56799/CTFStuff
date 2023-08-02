@@ -5,11 +5,10 @@ address ranges with various ELF files and permissions.
 The reason that we need robustness is that not every operating
 system has /proc/$$/maps, which backs 'info proc mapping'.
 """
+from __future__ import annotations
+
 import bisect
 from typing import Any
-from typing import List
-from typing import Optional
-from typing import Tuple
 
 import gdb
 
@@ -30,10 +29,10 @@ import pwndbg.lib.cache
 
 # List of manually-explored pages which were discovered
 # by analyzing the stack or register context.
-explored_pages: List[pwndbg.lib.memory.Page] = []
+explored_pages: list[pwndbg.lib.memory.Page] = []
 
 # List of custom pages that can be managed manually by vmmap_* commands family
-custom_pages: List[pwndbg.lib.memory.Page] = []
+custom_pages: list[pwndbg.lib.memory.Page] = []
 
 
 kernel_vmmap_via_pt = pwndbg.gdblib.config.add_param(
@@ -77,7 +76,7 @@ def is_corefile() -> bool:
 
 
 @pwndbg.lib.cache.cache_until("start", "stop")
-def get() -> Tuple[pwndbg.lib.memory.Page, ...]:
+def get() -> tuple[pwndbg.lib.memory.Page, ...]:
     """
     Returns a tuple of `Page` objects representing the memory mappings of the
     target, sorted by virtual address ascending.
@@ -103,9 +102,9 @@ def get() -> Tuple[pwndbg.lib.memory.Page, ...]:
         "i386",
         "x86-64",
         "aarch64",
-        "riscv:rv64",
+        "rv32",
+        "rv64",
     ):
-
         # If kernel_vmmap_via_pt is not set to the default value of "deprecated",
         # That means the user was explicitly setting it themselves and need to
         # be warned that the option is deprecated
@@ -160,7 +159,7 @@ def find(address):
 
 
 @pwndbg.gdblib.abi.LinuxOnly()
-def explore(address_maybe: int) -> Optional[Any]:
+def explore(address_maybe: int) -> Any | None:
     """
     Given a potential address, check to see what permissions it has.
 
@@ -372,9 +371,9 @@ def proc_pid_maps():
 
     pid = pwndbg.gdblib.proc.pid
     locations = [
-        "/proc/%s/maps" % pid,
-        "/proc/%s/map" % pid,
-        "/usr/compat/linux/proc/%s/maps" % pid,
+        f"/proc/{pid}/maps",
+        f"/proc/{pid}/map",
+        f"/usr/compat/linux/proc/{pid}/maps",
     ]
 
     for location in locations:
@@ -425,7 +424,7 @@ def proc_pid_maps():
 def kernel_vmmap_via_page_tables():
     import pt
 
-    retpages: List[pwndbg.lib.memory.Page] = []
+    retpages: list[pwndbg.lib.memory.Page] = []
 
     p = pt.PageTableDump()
     try:
@@ -434,7 +433,7 @@ def kernel_vmmap_via_page_tables():
         print(
             M.error(
                 "Permission error when attempting to parse page tables with gdb-pt-dump.\n"
-                + "Either change the kernel-vmmap setting, re-run GDB as root, or disable `ptrace_scope` (`echo 0 | sudo tee /proc/sys/kernel/yama`)"
+                + "Either change the kernel-vmmap setting, re-run GDB as root, or disable `ptrace_scope` (`echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope`)"
             )
         )
         return tuple(retpages)
@@ -453,7 +452,8 @@ def kernel_vmmap_via_page_tables():
             flags |= 2
         if page.pwndbg_is_executable():
             flags |= 1
-        retpages.append(pwndbg.lib.memory.Page(start, size, flags, 0, "<pt>"))
+        objfile = f"[pt_{hex(start)[2:-3]}]"
+        retpages.append(pwndbg.lib.memory.Page(start, size, flags, 0, objfile))
     return tuple(retpages)
 
 
@@ -650,7 +650,7 @@ def info_files():
 
 
 @pwndbg.lib.cache.cache_until("exit")
-def info_auxv(skip_exe=False):
+def info_auxv(skip_exe: bool = False):
     """
     Extracts the name of the executable from the output of the command
     "info auxv". Note that if the executable path is a symlink,
@@ -675,7 +675,13 @@ def info_auxv(skip_exe=False):
     phdr = auxv.AT_PHDR
 
     if not skip_exe and (entry or phdr):
-        pages.extend(pwndbg.gdblib.elf.map(entry or phdr, exe_name))
+        for addr in [entry, phdr]:
+            if not addr:
+                continue
+            new_pages = pwndbg.gdblib.elf.map(addr, exe_name)
+            if new_pages:
+                pages.extend(new_pages)
+                break
 
     if base:
         pages.extend(pwndbg.gdblib.elf.map(base, "[linker]"))
@@ -686,7 +692,7 @@ def info_auxv(skip_exe=False):
     return tuple(sorted(pages))
 
 
-def find_boundaries(addr, name="", min=0):
+def find_boundaries(addr, name: str = "", min: int = 0):
     """
     Given a single address, find all contiguous pages
     which are mapped.

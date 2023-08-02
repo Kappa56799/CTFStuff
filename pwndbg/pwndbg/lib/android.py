@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 KNOWN_AIDS = {
     0: "AID_ROOT",
     1000: "AID_SYSTEM",
@@ -89,4 +91,4 @@ def aid_name(uid):  # types: (int) -> str
     else:
         return str(uid)
 
-    return "%s+%s" % (KNOWN_AIDS[closest], uid - closest)
+    return f"{KNOWN_AIDS[closest]}+{uid - closest}"

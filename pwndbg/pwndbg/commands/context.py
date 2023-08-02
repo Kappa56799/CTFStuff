@@ -1,12 +1,11 @@
+from __future__ import annotations
+
 import argparse
 import ast
 import os
 import sys
 from collections import defaultdict
-from io import open
 from typing import DefaultDict
-from typing import Dict
-from typing import List
 
 import gdb
 
@@ -79,12 +78,12 @@ config_output = pwndbg.gdblib.config.add_param(
 )
 config_context_sections = pwndbg.gdblib.config.add_param(
     "context-sections",
-    "regs disasm code ghidra stack backtrace expressions",
+    "regs disasm code ghidra stack backtrace expressions threads",
     "which context sections are displayed (controls order)",
 )
 
 # Storing output configuration per section
-outputs = {}  # type: Dict[str,str]
+outputs: dict[str, str] = {}
 output_settings = {}
 
 
@@ -106,7 +105,7 @@ def validate_context_sections() -> None:
         config_context_sections.value = ""
         print(
             message.warn(
-                "Sections set to be empty. FYI valid values are: %s" % ", ".join(valid_values)
+                f"Sections set to be empty. FYI valid values are: {', '.join(valid_values)}"
             )
         )
         return
@@ -114,9 +113,7 @@ def validate_context_sections() -> None:
     for section in config_context_sections.split():
         if section not in valid_values:
             print(
-                message.warn(
-                    "Invalid section: %s, valid values: %s" % (section, ", ".join(valid_values))
-                )
+                message.warn(f"Invalid section: {section}, valid values: {', '.join(valid_values)}")
             )
             print(message.warn("(setting none of them like '' will make sections not appear)"))
             config_context_sections.revert_default()
@@ -389,7 +386,7 @@ def context(subcontext=None) -> None:
     sections += [(arg, context_sections.get(arg[0], None)) for arg in args]
 
     result = defaultdict(list)
-    result_settings: DefaultDict[str, Dict] = defaultdict(dict)
+    result_settings: DefaultDict[str, dict] = defaultdict(dict)
     for section, func in sections:
         if func:
             target = output(section)
@@ -510,7 +507,7 @@ def context_regs(target=sys.stdout, with_banner=True, width=None):
     if pwndbg.gdblib.config.show_compact_regs:
         regs = compact_regs(regs, target=target, width=width)
 
-    info = " / show-flags %s / show-compact-regs %s" % (
+    info = " / show-flags {} / show-compact-regs {}".format(
         "on" if pwndbg.gdblib.config.show_flags else "off",
         "on" if pwndbg.gdblib.config.show_compact_regs else "off",
     )
@@ -582,7 +579,7 @@ def get_regs(*regs):
         else:
             desc = pwndbg.chain.format(value)
 
-        result.append("%s%s %s" % (m, regname, desc))
+        result.append(f"{m}{regname} {desc}")
     return result
 
 
@@ -623,7 +620,7 @@ def context_disasm(target=sys.stdout, with_banner=True, width=None):
     # Note: we must fetch emulate value again after disasm since
     # we check if we can actually use emulation in `can_run_first_emulate`
     # and this call may disable it
-    info = " / %s / set emulate %s" % (
+    info = " / {} / set emulate {}".format(
         pwndbg.gdblib.arch.current,
         "on" if bool(pwndbg.gdblib.config.emulate) else "off",
     )
@@ -678,7 +675,7 @@ def get_filename_and_formatted_source():
 
     try:
         source = get_highlight_source(filename)
-    except IOError:
+    except OSError:
         return "", []
 
     if not source:
@@ -767,7 +764,7 @@ backtrace_lines = pwndbg.gdblib.config.add_param(
     "context-backtrace-lines", 8, "number of lines to print in the backtrace context"
 )
 backtrace_frame_label = theme.add_param(
-    "backtrace-frame-label", "f ", "frame number label for backtrace"
+    "backtrace-frame-label", "", "frame number label for backtrace"
 )
 
 
@@ -802,9 +799,8 @@ def context_backtrace(with_banner=True, target=sys.stdout, width=None):
     i = 0
     bt_prefix = "%s" % pwndbg.gdblib.config.backtrace_prefix
     while True:
-
         prefix = bt_prefix if frame == this_frame else " " * len(bt_prefix)
-        prefix = " %s" % c.prefix(prefix)
+        prefix = f" {c.prefix(prefix)}"
         addrsz = c.address(pwndbg.ui.addrsz(frame.pc()))
         symbol = c.symbol(pwndbg.gdblib.symbol.get(int(frame.pc())))
         if symbol:
@@ -834,7 +830,69 @@ def context_args(with_banner=True, target=sys.stdout, width=None):
     return args
 
 
-last_signal: List[str] = []
+last_signal: list[str] = []
+
+thread_status_messages = {
+    "running": pwndbg.color.light_green("running"),
+    "stopped": pwndbg.color.yellow("stopped"),
+    "exited": pwndbg.color.gray("exited "),
+}
+
+
+def get_thread_status(thread):
+    if thread.is_running():
+        return thread_status_messages["running"]
+    elif thread.is_stopped():
+        return thread_status_messages["stopped"]
+    elif thread.is_exited():
+        return thread_status_messages["exited"]
+    else:
+        return "unknown"
+
+
+def context_threads(with_banner=True, target=sys.stdout, width=None):
+    threads = gdb.selected_inferior().threads()[::-1]
+
+    if len(threads) < 2:
+        return []
+
+    selected_thread = gdb.selected_thread()
+    selected_frame = gdb.selected_frame()
+
+    out = []
+    max_name_length = 0
+
+    for thread in threads:
+        if len(thread.name) > max_name_length:
+            max_name_length = len(thread.name)
+
+    for thread in threads:
+        thread.switch()
+        frame = gdb.selected_frame()
+
+        selected = " ►" if thread is selected_thread else "  "
+
+        symbol = pwndbg.gdblib.symbol.get(frame.pc())
+        status = get_thread_status(thread)
+
+        padding = max_name_length - len(thread.name)
+
+        line = (
+            f" {selected} {thread.global_num}\t"
+            f'"{pwndbg.color.cyan(thread.name)}" '
+            f'{" " * padding}'
+            f"{status}: {M.get(frame.pc())} "
+        )
+        if symbol:
+            line += f"<{pwndbg.color.bold(pwndbg.color.green(symbol))}> "
+        out.append(line)
+
+    out.insert(0, pwndbg.ui.banner("threads", target=target, width=width))
+
+    selected_thread.switch()
+    selected_frame.select()
+
+    return out
 
 
 def save_signal(signal) -> None:
@@ -847,10 +905,9 @@ def save_signal(signal) -> None:
             result.append(message.exit("Exited: %r" % signal.exit_code))
 
     elif isinstance(signal, gdb.SignalEvent):
-        msg = "Program received signal %s" % signal.stop_signal
+        msg = f"Program received signal {signal.stop_signal}"
 
         if signal.stop_signal == "SIGSEGV":
-
             # When users use rr (https://rr-project.org or https://github.com/mozilla/rr)
             # we can't access $_siginfo, so lets just show current pc
             # see also issue 476
@@ -866,7 +923,7 @@ def save_signal(signal) -> None:
 
     elif isinstance(signal, gdb.BreakpointEvent):
         for bkpt in signal.breakpoints:
-            result.append(message.breakpoint("Breakpoint %s" % (bkpt.location)))
+            result.append(message.breakpoint(f"Breakpoint {(bkpt.location)}"))
 
 
 gdb.events.cont.connect(save_signal)
@@ -887,6 +944,7 @@ context_sections = {
     "b": context_backtrace,
     "e": context_expressions,
     "g": context_ghidra,
+    "t": context_threads,
 }
 
 

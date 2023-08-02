@@ -1,12 +1,17 @@
+from __future__ import annotations
+
 import copy
 import importlib
 from collections import OrderedDict
-from enum import Enum
+
+try:
+    # Python 3.11, see https://docs.python.org/3/whatsnew/3.11.html#enum
+    from enum import ReprEnum as Enum
+except ImportError:
+    from enum import Enum
+
 from typing import Any
 from typing import Callable
-from typing import Dict
-from typing import Optional
-from typing import Tuple
 from typing import Union  # noqa: F401
 
 import gdb
@@ -79,7 +84,7 @@ class Bin:
 class Bins:
     def __init__(self, bin_type) -> None:
         # `typing.OrderedDict` requires Python 3.7
-        self.bins = OrderedDict()  # type: OrderedDict[Union[int, str], Bin]
+        self.bins: OrderedDict[int | str, Bin] = OrderedDict()
         self.bin_type = bin_type
 
     # TODO: There's a bunch of bin-specific logic in here, maybe we should
@@ -1014,7 +1019,7 @@ class GlibcMemoryAllocator(pwndbg.heap.heap.MemoryAllocator):
             return self.minsize
         return (req + self.size_sz + self.malloc_align_mask) & ~self.malloc_align_mask
 
-    def chunk_flags(self, size):
+    def chunk_flags(self, size: int):
         return (
             size & ptmalloc.PREV_INUSE,
             size & ptmalloc.IS_MMAPPED,
@@ -1074,7 +1079,7 @@ class GlibcMemoryAllocator(pwndbg.heap.heap.MemoryAllocator):
         else:
             return None
 
-    def fastbin_index(self, size):
+    def fastbin_index(self, size: int):
         if pwndbg.gdblib.arch.ptrsize == 8:
             return (size >> 4) - 2
         else:
@@ -1122,7 +1127,7 @@ class GlibcMemoryAllocator(pwndbg.heap.heap.MemoryAllocator):
         num_tcachebins = entries.type.sizeof // entries.type.target().sizeof
         safe_lnk = pwndbg.glibc.check_safe_linking()
 
-        def tidx2usize(idx):
+        def tidx2usize(idx: int):
             """Tcache bin index to chunk size, following tidx2usize macro in glibc malloc.c"""
             return idx * self.malloc_alignment + self.minsize - self.size_sz
 
@@ -1478,8 +1483,8 @@ class HeuristicHeap(GlibcMemoryAllocator):
     def __init__(self) -> None:
         super().__init__()
         self._structs_module = None
-        self._thread_arena_values: Dict[int, int] = {}
-        self._thread_caches: Dict[int, Any] = {}
+        self._thread_arena_values: dict[int, int] = {}
+        self._thread_caches: dict[int, Any] = {}
 
     @property
     def struct_module(self):
@@ -1656,7 +1661,7 @@ class HeuristicHeap(GlibcMemoryAllocator):
 
     def brute_force_tls_reference_in_got_section(
         self, tls_address: int, validator: Callable[[int], bool]
-    ) -> Optional[Tuple[int, int]]:
+    ) -> tuple[int, int] | None:
         """Brute force the TLS-reference in the .got section to that can pass the validator."""
         # Note: This highly depends on the correctness of the TLS address
         print(message.notice("Brute forcing the TLS-reference in the .got section..."))
@@ -1688,7 +1693,7 @@ class HeuristicHeap(GlibcMemoryAllocator):
 
     def brute_force_thread_local_variable_near_tls_base(
         self, tls_address: int, validator: Callable[[int], bool]
-    ) -> Optional[Tuple[int, int]]:
+    ) -> tuple[int, int] | None:
         """Brute force the thread-local variable near the TLS base address that can pass the validator."""
         print(
             message.notice(
@@ -1749,11 +1754,7 @@ class HeuristicHeap(GlibcMemoryAllocator):
                     value, address = found
                     print(
                         message.notice(
-                            "Found matching arena address %s at %s\n"
-                            % (
-                                message.hint(hex(value)),
-                                message.hint(hex(address)),
-                            )
+                            f"Found matching arena address {message.hint(hex(value))} at {message.hint(hex(address))}\n"
                         )
                     )
                     arena = Arena(value)
@@ -1762,8 +1763,7 @@ class HeuristicHeap(GlibcMemoryAllocator):
 
                 print(
                     message.notice(
-                        "Cannot find %s, the arena might be not allocated yet.\n"
-                        % message.hint("thread_arena")
+                        f"Cannot find {message.hint('thread_arena')}, the arena might be not allocated yet.\n"
                     )
                 )
                 return None
@@ -1831,11 +1831,7 @@ class HeuristicHeap(GlibcMemoryAllocator):
                         value, address = found
                         print(
                             message.notice(
-                                "Found possible tcache at %s with value: %s\n"
-                                % (
-                                    message.hint(hex(address)),
-                                    message.hint(hex(value)),
-                                )
+                                f"Found possible tcache at {message.hint(hex(address))} with value: {message.hint(hex(value))}\n"
                             )
                         )
                         self._thread_cache = self.tcache_perthread_struct(value)

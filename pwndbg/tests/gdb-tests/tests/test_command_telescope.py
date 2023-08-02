@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 
 import gdb
@@ -58,7 +60,7 @@ def test_command_telescope_n_records(start_binary):
 
     n = 3
     gdb.execute("entry")
-    result = gdb.execute("telescope $rsp {}".format(n), to_string=True).strip().splitlines()
+    result = gdb.execute(f"telescope $rsp {n}", to_string=True).strip().splitlines()
     assert len(result) == n
 
 
@@ -71,7 +73,7 @@ def test_telescope_command_with_address_as_count(start_binary):
     assert len(out) == 2
     assert out[0] == "00:0000│ rsp %#x ◂— 0x1" % rsp
 
-    expected = r"01:0008│     %#x —▸ 0x[0-9a-f]+ ◂— '%s'" % (rsp + 8, pwndbg.gdblib.proc.exe)
+    expected = rf"01:0008│     {rsp + 8:#x} —▸ 0x[0-9a-f]+ ◂— '{pwndbg.gdblib.proc.exe}'"
     assert re.search(expected, out[1])
 
 
@@ -82,3 +84,21 @@ def test_telescope_command_with_address_as_count_and_reversed_flag(start_binary)
     rsp = pwndbg.gdblib.regs.rsp
 
     assert out == ["00:0000│     %#x ◂— 0x0" % (rsp - 8), "01:0008│ rsp %#x ◂— 0x1" % rsp]
+
+
+def test_command_telescope_reverse_skipped_records_shows_input_address(start_binary):
+    """
+    Tests reversed telescope with skipped records shows input address
+    """
+    start_binary(TELESCOPE_BINARY)
+
+    gdb.execute("break break_here")
+    gdb.execute("run")
+    gdb.execute("up")
+    pwndbg.gdblib.memory.write(pwndbg.gdblib.regs.rsp - 8 * 3, b"\x00" * 8 * 4)
+
+    expected_value = hex(pwndbg.gdblib.regs.rsp)
+    result_str = gdb.execute("telescope -r $rsp", to_string=True)
+    result_lines = result_str.strip("\n").split("\n")
+
+    assert expected_value in result_lines[-1]

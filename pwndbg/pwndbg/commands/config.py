@@ -2,6 +2,8 @@
 Dumps all pwndbg-specific configuration points.
 """
 
+from __future__ import annotations
+
 import argparse
 
 import pwndbg.commands
@@ -24,7 +26,7 @@ def print_row(name, value, default, set_show_doc, ljust_optname, ljust_value, em
 
 def extend_value_with_default(value, default):
     if strip(value) != strip(default):
-        return "%s (%s)" % (value, default)
+        return f"{value} ({default})"
     return value
 
 
@@ -69,7 +71,7 @@ def display_config(filter_pattern: str, scope: str, has_file_command: bool = Tru
         map(len, [extend_value_with_default(repr(v.value), repr(v.default)) for v in values])
     )
 
-    header = print_row("Name", "Value", "Def", "Documentation", longest_optname, longest_value)
+    header = print_row("Name", "Value", "Default", "Documentation", longest_optname, longest_value)
     print("-" * (len(header)))
 
     for v in sorted(values):
@@ -156,9 +158,9 @@ def configfile_print_scope(scope, show_all=False) -> None:
             native_value = pwndbg.gdblib.config_mod.Parameter._value_to_gdb_native(
                 p.value, param_class=p.param_class
             )
-            print("# %s: %s" % (p.name, p.set_show_doc))
-            print("# default: %s" % native_default)
-            print("set %s %s" % (p.name, native_value))
+            print(f"# {p.name}: {p.set_show_doc}")
+            print(f"# default: {native_default}")
+            print(f"set {p.name} {native_value}")
             print()
     else:
-        print(hint("No changed values. To see current values use `%s`." % scope))
+        print(hint(f"No changed values. To see current values use `{scope}`."))

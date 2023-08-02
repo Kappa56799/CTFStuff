@@ -2,12 +2,15 @@
 Emulation assistance from Unicorn.
 """
 
+from __future__ import annotations
+
 import binascii
 import re
 
 import capstone as C
 import gdb
 import unicorn as U
+import unicorn.riscv_const
 
 import pwndbg.disasm
 import pwndbg.gdblib.arch
@@ -36,6 +39,8 @@ arch_to_UC = {
     "arm": U.UC_ARCH_ARM,
     "aarch64": U.UC_ARCH_ARM64,
     # 'powerpc': U.UC_ARCH_PPC,
+    "rv32": U.UC_ARCH_RISCV,
+    "rv64": U.UC_ARCH_RISCV,
 }
 
 arch_to_UC_consts = {
@@ -45,25 +50,23 @@ arch_to_UC_consts = {
     "sparc": parse_consts(U.sparc_const),
     "arm": parse_consts(U.arm_const),
     "aarch64": parse_consts(U.arm64_const),
+    "rv32": parse_consts(U.riscv_const),
+    "rv64": parse_consts(U.riscv_const),
 }
 
-# Map our internal architecture names onto Unicorn Engine's architecture types.
-arch_to_CS = {
-    "i386": C.CS_ARCH_X86,
-    "x86-64": C.CS_ARCH_X86,
-    "mips": C.CS_ARCH_MIPS,
-    "sparc": C.CS_ARCH_SPARC,
-    "arm": C.CS_ARCH_ARM,
-    "aarch64": C.CS_ARCH_ARM64,
-    # 'powerpc': C.CS_ARCH_PPC,
-}
 
 DEBUG = False
 
 
-def debug(fmt, args=()) -> None:
-    if DEBUG:
+if DEBUG:
+
+    def debug(fmt, args=()) -> None:
         print(fmt % args)
+
+else:
+
+    def debug(fmt, args=()) -> None:
+        pass
 
 
 # Until Unicorn Engine provides full information about the specific instruction
@@ -87,6 +90,7 @@ arch_to_SYSCALL = {
     U.UC_ARCH_ARM: [C.arm_const.ARM_INS_SVC],
     U.UC_ARCH_ARM64: [C.arm64_const.ARM64_INS_SVC],
     U.UC_ARCH_PPC: [C.ppc_const.PPC_INS_SC],
+    U.UC_ARCH_RISCV: [C.riscv_const.RISCV_INS_ECALL],
 }
 
 blacklisted_regs = ["ip", "cs", "ds", "es", "fs", "gs", "ss", "fsbase", "gsbase"]
@@ -102,7 +106,7 @@ class Emulator:
         self.arch = pwndbg.gdblib.arch.current
 
         if self.arch not in arch_to_UC:
-            raise NotImplementedError("Cannot emulate code for %s" % self.arch)
+            raise NotImplementedError(f"Cannot emulate code for {self.arch}")
 
         self.consts = arch_to_UC_consts[self.arch]
 
@@ -151,7 +155,7 @@ class Emulator:
             if value == 0:
                 continue
 
-            name = "U.x86_const.UC_X86_REG_%s" % reg.upper()
+            name = f"U.x86_const.UC_X86_REG_{reg.upper()}"
             debug("uc.reg_write(%(name)s, %(value)#x)", locals())
             self.uc.reg_write(enum, value)
 
@@ -168,13 +172,13 @@ class Emulator:
         if DEBUG:
             self.hook_add(U.UC_HOOK_CODE, self.trace_hook)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str):
         reg = self.get_reg_enum(name)
 
         if reg:
             return self.uc.reg_read(reg)
 
-        raise AttributeError("AttributeError: %r object has no attribute %r" % (self, name))
+        raise AttributeError(f"AttributeError: {self!r} object has no attribute {name!r}")
 
     def update_pc(self, pc=None) -> None:
         if pc is None:
@@ -237,7 +241,7 @@ class Emulator:
 
         return True
 
-    def hook_mem_invalid(self, uc, access, address, size, value, user_data) -> bool:
+    def hook_mem_invalid(self, uc, access, address, size: int, value, user_data) -> bool:
         debug("# Invalid access at %#x", address)
 
         # Page-align the start address
@@ -367,7 +371,7 @@ class Emulator:
         # We're done emulating
         return self._prev, self._curr
 
-    def until_jump_hook_code(self, _uc, address, instruction_size, _user_data) -> None:
+    def until_jump_hook_code(self, _uc, address, instruction_size: int, _user_data) -> None:
         # We have not emulated any instructions yet.
         if self._prev is None:
             pass
@@ -405,7 +409,7 @@ class Emulator:
         self.emulate_with_hook(self.until_syscall_hook_code)
         return (self.until_syscall_address, None)
 
-    def until_syscall_hook_code(self, uc, address, size, user_data) -> None:
+    def until_syscall_hook_code(self, uc, address, size: int, user_data) -> None:
         data = binascii.hexlify(self.mem_read(address, size))
         debug("# Executing instruction at %(address)#x with bytes %(data)s", locals())
         self.until_syscall_address = address
@@ -446,7 +450,7 @@ class Emulator:
             yield a
             a = self.single_step(pc)
 
-    def single_step_hook_code(self, _uc, address, instruction_size, _user_data) -> None:
+    def single_step_hook_code(self, _uc, address, instruction_size: int, _user_data) -> None:
         # For whatever reason, the hook will hit twice on
         # unicorn >= 1.0.2rc4, but not on unicorn-1.0.2rc1~unicorn-1.0.2rc3,
         # So we use a counter to ensure the code run only once
@@ -468,10 +472,10 @@ class Emulator:
                 debug("# Could not dump register %r", reg)
                 continue
 
-            name = "U.x86_const.UC_X86_REG_%s" % reg.upper()
+            name = f"U.x86_const.UC_X86_REG_{reg.upper()}"
             value = self.uc.reg_read(enum)
             debug("uc.reg_read(%(name)s) ==> %(value)x", locals())
 
-    def trace_hook(self, _uc, address, instruction_size, _user_data) -> None:
+    def trace_hook(self, _uc, address, instruction_size: int, _user_data) -> None:
         data = binascii.hexlify(self.mem_read(address, instruction_size))
         debug("# trace_hook: %#-8x %r", (address, data))

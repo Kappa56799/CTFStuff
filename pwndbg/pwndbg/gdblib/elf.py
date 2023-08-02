@@ -6,13 +6,12 @@ This is necessary for when access to /proc is restricted, or when
 working on a BSD system which simply does not have /proc.
 """
 
+from __future__ import annotations
+
 import ctypes
 import importlib
 import sys
 from collections import namedtuple
-from typing import List
-from typing import Optional
-from typing import Tuple
 
 import gdb
 from elftools.elf.constants import SH_FLAGS
@@ -177,7 +176,7 @@ def get_containing_sections(elf_filepath, elf_loadaddr, vaddr):
 
 def dump_section_by_name(
     filepath: str, section_name: str, try_local_path: bool = False
-) -> Optional[Tuple[int, int, bytes]]:
+) -> tuple[int, int, bytes] | None:
     """
     Dump the content of a section from an ELF file, return the start address, size and content.
     """
@@ -192,7 +191,7 @@ def dump_section_by_name(
 
 def dump_relocations_by_section_name(
     filepath: str, section_name: str, try_local_path: bool = False
-) -> Optional[Tuple[Relocation, ...]]:
+) -> tuple[Relocation, ...] | None:
     """
     Dump the relocation entries of a section from an ELF file, return a generator of Relocation objects.
     """
@@ -273,32 +272,38 @@ def get_ehdr(pointer):
     We expect the `pointer` to be an address from the binary.
     """
 
-    # This just does not work :(
-    if pwndbg.gdblib.qemu.is_qemu():
-        return None, None
-
-    vmmap = pwndbg.gdblib.vmmap.find(pointer)
     base = None
 
-    # If there is no vmmap for the requested address, we can't do much
-    # (e.g. it could have been unmapped for whatever reason)
-    if vmmap is None:
-        return None, None
-
-    # We first check if the beginning of the page contains the ELF magic
-    if pwndbg.gdblib.memory.read(vmmap.start, 4, partial=True) == b"\x7fELF":
-        base = vmmap.start
-
-    # The page did not have ELF magic; it may be that .text and binary start are split
-    # into two pages, so let's get the first page from the pointer's page objfile
+    if pwndbg.gdblib.qemu.is_qemu():
+        # Only check if the beginning of the page contains the ELF magic,
+        # since we cannot get the memory map in qemu-user.
+        page_start = pwndbg.lib.memory.page_align(pointer)
+        if pwndbg.gdblib.memory.read(page_start, 4, partial=True) == b"\x7fELF":
+            base = page_start
+        else:
+            return None, None
     else:
-        for v in pwndbg.gdblib.vmmap.get():
-            if v.objfile == vmmap.objfile:
-                vmmap = v
-                break
+        vmmap = pwndbg.gdblib.vmmap.find(pointer)
 
+        # If there is no vmmap for the requested address, we can't do much
+        # (e.g. it could have been unmapped for whatever reason)
+        if vmmap is None:
+            return None, None
+
+        # We first check if the beginning of the page contains the ELF magic
         if pwndbg.gdblib.memory.read(vmmap.start, 4, partial=True) == b"\x7fELF":
             base = vmmap.start
+
+        # The page did not have ELF magic; it may be that .text and binary start are split
+        # into two pages, so let's get the first page from the pointer's page objfile
+        else:
+            for v in pwndbg.gdblib.vmmap.get():
+                if v.objfile == vmmap.objfile:
+                    vmmap = v
+                    break
+
+            if pwndbg.gdblib.memory.read(vmmap.start, 4, partial=True) == b"\x7fELF":
+                base = vmmap.start
 
     if base is None:
         # For non linux ABI, the ELF header may not exist at all
@@ -388,7 +393,7 @@ def map_inner(ei_class, ehdr, objfile):
     # Entries are processed in-order so that later entries
     # which change page permissions (e.g. PT_GNU_RELRO) will
     # override their small subset of address space.
-    pages: List[pwndbg.lib.memory.Page] = []
+    pages: list[pwndbg.lib.memory.Page] = []
     for phdr in iter_phdrs(ehdr):
         memsz = int(phdr.p_memsz)
 

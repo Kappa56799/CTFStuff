@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 
 import pwndbg.commands
@@ -22,4 +24,4 @@ def memoize() -> None:
     if pwndbg.lib.cache.IS_CACHING:
         status = message.on("ON")
 
-    print("Caching is now %s" % status)
+    print(f"Caching is now {status}")

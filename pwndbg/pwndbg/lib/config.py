@@ -1,9 +1,9 @@
+from __future__ import annotations
+
 import collections
 from functools import total_ordering
 from typing import Callable
 from typing import DefaultDict
-from typing import Dict
-from typing import List
 
 import gdb
 
@@ -25,7 +25,7 @@ PARAM_CLASSES = {
 class Parameter:
     def __init__(
         self,
-        name,
+        name: str,
         default,
         set_show_doc,
         *,
@@ -60,7 +60,7 @@ class Parameter:
         i.e. `my-config` has the attribute name `my_config`"""
         return self.name.replace("-", "_")
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str):
         return getattr(self.value, name)
 
     # Casting
@@ -128,12 +128,12 @@ class Parameter:
 
 class Config:
     def __init__(self) -> None:
-        self.params: Dict[str, Parameter] = {}
-        self.triggers: DefaultDict[str, List[Callable]] = collections.defaultdict(lambda: [])
+        self.params: dict[str, Parameter] = {}
+        self.triggers: DefaultDict[str, list[Callable]] = collections.defaultdict(lambda: [])
 
     def add_param(
         self,
-        name,
+        name: str,
         default,
         set_show_doc,
         *,
@@ -165,7 +165,7 @@ class Config:
         self.params[attr_name] = p
         return p
 
-    def trigger(self, *params: List[Parameter]):
+    def trigger(self, *params: list[Parameter]):
         names = [p.name for p in params]
 
         def wrapper(func):
@@ -175,11 +175,11 @@ class Config:
 
         return wrapper
 
-    def get_params(self, scope) -> List[Parameter]:
+    def get_params(self, scope) -> list[Parameter]:
         return sorted(filter(lambda p: p.scope == scope, self.params.values()))
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str):
         if name in self.params:
             return self.params[name]
         else:
-            raise AttributeError("'Config' object has no attribute '%s'" % name)
+            raise AttributeError(f"'Config' object has no attribute '{name}'")

@@ -10,7 +10,7 @@ set -o pipefail
 mkdir -p ~/.parallel
 . $(which env_parallel.bash)
 
-# Workaround for Ubuntu 20.04/18.04 CI. If no aliases are defined
+# Workaround for Ubuntu 20.04 CI. If no aliases are defined
 # `env_parallel --record-env` will have non-zero exit code for older versions of
 # `parallel`, so we define a dummy alias here
 alias __dummy=foo
@@ -101,7 +101,7 @@ run_gdb() {
 
 # NOTE: We run tests under GDB sessions and because of some cleanup/tests dependencies problems
 # we decided to run each test in a separate GDB session
-gdb_args=(--command $GDB_INIT_PATH --command pytests_collect.py)
+gdb_args=(--init-command $GDB_INIT_PATH --command pytests_collect.py)
 TESTS_COLLECT_OUTPUT=$(run_gdb "${gdb_args[@]}")
 
 if [ $? -eq 1 ]; then
@@ -117,7 +117,7 @@ TESTS_LIST=($(echo -E "$TESTS_COLLECT_OUTPUT" | grep -o "tests/.*::.*" | grep "$
 run_test() {
     test_case="$1"
 
-    gdb_args=(--command $GDB_INIT_PATH --command pytests_launcher.py)
+    gdb_args=(--init-command $GDB_INIT_PATH --command pytests_launcher.py)
     if [ ${RUN_CODECOV} -ne 0 ]; then
         gdb_args=(-ex 'py import coverage;coverage.process_startup()' "${gdb_args[@]}")
     fi

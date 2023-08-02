@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import subprocess
 import tempfile
@@ -19,11 +21,10 @@ parser.add_argument("argument", nargs="*", type=str, help="Arguments to pass to 
 @pwndbg.commands.OnlyWithFile
 def ropper(argument) -> None:
     with tempfile.NamedTemporaryFile() as corefile:
-
         # If the process is running, dump a corefile so we get actual addresses.
         if pwndbg.gdblib.proc.alive:
             filename = corefile.name
-            gdb.execute("gcore %s" % filename)
+            gdb.execute(f"gcore {filename}")
         else:
             filename = pwndbg.gdblib.proc.exe
 

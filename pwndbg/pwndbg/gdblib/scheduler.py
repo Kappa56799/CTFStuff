@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from contextlib import contextmanager
 
 import gdb
@@ -20,7 +22,7 @@ def lock_scheduler():
     if old_config != "on":
         gdb.execute("set scheduler-locking on")
         yield
-        gdb.execute("set scheduler-locking %s" % old_config)
+        gdb.execute(f"set scheduler-locking {old_config}")
     else:
         yield
 

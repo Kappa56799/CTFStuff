@@ -1,4 +1,4 @@
-from typing import List
+from __future__ import annotations
 
 import gdb
 from capstone import *  # noqa: F403
@@ -70,7 +70,7 @@ opcode_separator_bytes = pwndbg.gdblib.config.add_param(
 )
 
 
-def nearpc(pc=None, lines=None, emulate=False, repeat=False) -> List[str]:
+def nearpc(pc=None, lines=None, emulate=False, repeat=False) -> list[str]:
     """
     Disassemble near a specified address.
     """
@@ -137,7 +137,7 @@ def nearpc(pc=None, lines=None, emulate=False, repeat=False) -> List[str]:
     nearpc.next_pc = instructions[-1].address + instructions[-1].size if instructions else 0
 
     # Format the symbol name for each instruction
-    symbols = ["<%s> " % sym if sym else "" for sym in symbols]
+    symbols = [f"<{sym}> " if sym else "" for sym in symbols]
 
     # Pad out all of the symbols and addresses
     if pwndbg.gdblib.config.left_pad_disasm and not repeat:
@@ -198,7 +198,7 @@ def nearpc(pc=None, lines=None, emulate=False, repeat=False) -> List[str]:
         # If there was a branch before this instruction which was not
         # contiguous, put in some ellipses.
         if prev and prev.address + prev.size != instr.address:
-            result.append(c.branch_marker("%s" % nearpc_branch_marker))
+            result.append(c.branch_marker(f"{nearpc_branch_marker}"))
 
         # Otherwise if it's a branch and it *is* contiguous, just put
         # and empty line.
@@ -226,7 +226,7 @@ def nearpc(pc=None, lines=None, emulate=False, repeat=False) -> List[str]:
         # determine the number of arguments.
         if show_args:
             result.extend(
-                ("%8s%s" % ("", arg) for arg in pwndbg.arguments.format_args(instruction=instr))
+                "%8s%s" % ("", arg) for arg in pwndbg.arguments.format_args(instruction=instr)
             )
 
         prev = instr

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pwndbg.gdblib.arch
 
 from . import aarch64
@@ -15,11 +17,12 @@ arches = {
     "mips": mips,
     "x86-64": amd64,
     "aarch64": aarch64,
-    "riscv:rv64": riscv64,
+    "rv32": riscv64,
+    "rv64": riscv64,
 }
 
 
-def syscall(number, arch):
+def syscall(number: int, arch):
     """
     Given a syscall number and architecture, returns the name of the syscall.
     E.g. execve == 59 on x86-64
