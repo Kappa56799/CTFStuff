@@ -79,12 +79,12 @@ case $input in
     ;;
   4)
     #exits the program
-    printf "Exiting"
+    printf "Exiting";
     exit 1
     ;;
   *) 
     #If user inputs anything that isnt 1,2,3,4
-    printf "Invalid Input"
+    printf "Invalid Input";
     ;;
 esac
 
